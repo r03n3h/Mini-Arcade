@@ -10,6 +10,7 @@ The project started from a great base by **Dododomme** (Snake, Tetris, Pong). Th
 
 Everything runs in a single Arduino sketch using **Adafruit_GFX** and **Adafruit_SSD1306**.
 
+For 3D files -> https://makerworld.com/en/models/1527345-mini-arcade
 ---
 
 ## Why this project?
