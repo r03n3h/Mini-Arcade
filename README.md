@@ -31,10 +31,13 @@ I wanted a simple, hackable arcade you can assemble quickly from common parts an
 
 ## Hardware
 
-- **MCU**: ESP32 (any dev board with enough GPIOs)
-- **Display**: 0.96" or 1.3" **SSD1306** OLED (I²C, 128×64) at address **0x3C**
-- **Buttons**: 7 push buttons (active-low with `INPUT_PULLUP`)
+- **MCU**: ESP32 (any dev board with enough GPIOs) https://s.click.aliexpress.com/e/_oFby3yb
+- **Display**: 0.96" or 1.3" **SSD1306** OLED (I²C, 128×64) at address **0x3C** https://s.click.aliexpress.com/e/_opnnImj
+- **Buttons**: 7 push buttons (active-low with `INPUT_PULLUP`) https://s.click.aliexpress.com/e/_omVUy1t
+- *Optional*: Extra DuPont Line 40Pin Male to Female (not required) https://s.click.aliexpress.com/e/_oCOWjVz
 - *Optional*: buzzer/LEDs (not required)
+
+- Total price less then 20,-
 
 **I²C & Display**
 
