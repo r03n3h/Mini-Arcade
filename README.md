@@ -135,6 +135,7 @@ MIT (or your preferred open-source license). Include a `LICENSE` file in the rep
 
 ## Roadmap / Ideas
 
+- Add extra games like Frogger and Pacman
 - High-score persistence (EEPROM/Preferences)
 - Simple sound effects (buzzer), optional LED feedback
 - Difficulty presets (Easy/Normal/Hard) in the menu
