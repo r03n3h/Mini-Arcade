@@ -1,0 +1,1046 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// Buttons
+#define BTN_UP   32
+#define BTN_DWN  33
+#define BTN_LFT  25
+#define BTN_RHT  26
+#define BTN_MID  27
+#define BTN_SET  14
+#define BTN_RST  12
+
+// Menu
+const char* menuItems[] = {"Snake", "Tetris", "Pong", "Breakout", "Flappy", "Invasion"};
+const int menuLength = sizeof(menuItems) / sizeof(menuItems[0]);
+int currentSelection = 0;
+bool inGame = false;
+int activeGame = -1;
+
+// Play area (same for all games)
+#define SEG_SIZE 6
+#define FIELD_X 2
+#define FIELD_Y 2
+#define FIELD_W 60
+#define FIELD_H 120
+#define GRID_WIDTH 10
+#define GRID_HEIGHT 20
+
+// ===== SCORES & HUD =====
+int snakeScore = 0;
+int tetrisScore = 0;
+int pongScore = 0;
+int breakoutScore = 0;
+
+void drawScore(const char* name, int score) {
+  // Small overlay at the top-left inside the playfield
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(FIELD_X + 2, FIELD_Y + 2);
+  display.print(name);
+  display.print(":");
+  display.print(score);
+}
+
+// Snake
+#define MAX_SNAKE_LENGTH 100
+struct Point { int x, y; };
+Point snake[MAX_SNAKE_LENGTH];
+int snakeLength = 5;
+int dx = 0, dy = -1;
+Point food;
+unsigned long lastMove = 0;
+unsigned long moveInterval = 300;
+
+// Pong
+int pongBallX = FIELD_X + FIELD_W / 2;
+int pongBallY = FIELD_Y + FIELD_H / 2;
+int pongBallDX = 1;
+int pongBallDY = 1;
+float pongSpeed = 1.0;
+int pongPaddleY = FIELD_Y + FIELD_H / 2 - 10;
+
+// Tetris (variables follow in Part 5/6)
+
+void setup() {
+  pinMode(BTN_UP, INPUT_PULLUP); pinMode(BTN_DWN, INPUT_PULLUP);
+  pinMode(BTN_LFT, INPUT_PULLUP); pinMode(BTN_RHT, INPUT_PULLUP);
+  pinMode(BTN_MID, INPUT_PULLUP); pinMode(BTN_SET, INPUT_PULLUP);
+  pinMode(BTN_RST, INPUT_PULLUP);
+
+  // Use rotation 3 (portrait)
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.setRotation(3);
+  display.clearDisplay();
+  display.display();
+  drawMenu();
+}
+
+// Part 2
+
+void loop() {
+  if (inGame) {
+    switch (activeGame) {
+      case 0: // Snake
+        handleSnakeInput();
+        if (millis() - lastMove > moveInterval) {
+          updateSnake();
+          lastMove = millis();
+        }
+        drawSnakeGame();
+        break;
+
+      case 1: // Tetris
+        loopTetris();  // Function defined in Part 6
+        break;
+
+      case 2: // Pong
+        handlePongInput();
+        updatePong();
+        drawPongGame();
+        break;
+
+      // Add Breakout:
+      case 3: // Breakout
+        handleBreakoutInput();
+        updateBreakout();
+        drawBreakoutGame();
+        break;
+
+      // Add Flappy:
+      case 4: // Flappy
+        handleFlappyInput();
+        updateFlappy();
+        drawFlappyGame();
+        break;
+
+      // Add Invasion:
+      case 5: // Invasion
+        handleInvasionInput();
+        updateInvasion();
+        drawInvasionGame();
+        break;
+    }
+  } else {
+    handleMenuInput();
+    drawMenu();
+  }
+}
+
+// Menu logic
+void handleMenuInput() {
+  if (!digitalRead(BTN_UP))  { currentSelection = (currentSelection - 1 + menuLength) % menuLength; delay(150); }
+  if (!digitalRead(BTN_DWN)) { currentSelection = (currentSelection + 1) % menuLength; delay(150); }
+
+  // Menu selection for all games
+  if (!digitalRead(BTN_MID)) {
+    if (currentSelection == 0) { startSnakeGame(); }
+    else if (currentSelection == 1) { startTetrisGame(); }
+    else if (currentSelection == 2) { startPongGame(); }
+    else if (currentSelection == 3) { startBreakoutGame(); }
+    else if (currentSelection == 4) { startFlappyGame(); }
+    else if (currentSelection == 5) { startInvasionGame(); }
+  }
+
+  if (!digitalRead(BTN_RST)) currentSelection = 0;
+}
+
+// Draw menu
+void drawMenu() {
+  display.clearDisplay();
+  display.drawRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2, SSD1306_WHITE);
+
+  display.fillRect(FIELD_X + 3, FIELD_Y + 4, 54, 20, SSD1306_WHITE);
+  display.setTextColor(SSD1306_BLACK);
+  display.setTextSize(1);
+  display.setCursor(FIELD_X + 17, FIELD_Y + 6);  display.print("Mini");
+  display.setCursor(FIELD_X + 13, FIELD_Y + 14); display.print("Arcade");
+
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(FIELD_X + 10, FIELD_Y + 26);  display.print("by r03n");
+
+  for (int i = 0; i < menuLength; i++) {
+    int y = FIELD_Y + 48 + i * 12;
+    display.setCursor((i == currentSelection) ? FIELD_X + 3 : FIELD_X + 12, y);
+    if (i == currentSelection) display.print(">");
+    display.print(menuItems[i]);
+  }
+
+  display.display();
+}
+
+// Part 3
+
+
+
+// Start Snake
+void startSnakeGame() {
+  inGame = true;
+  activeGame = 0;
+  snakeScore = 0;                 // score
+  snakeLength = 5;
+  dx = 0; dy = -1;
+  for (int i = 0; i < snakeLength; i++) {
+    snake[i] = {GRID_WIDTH / 2, GRID_HEIGHT / 2 + i};
+  }
+  placeFood();
+  lastMove = millis();
+}
+
+void handleSnakeInput() {
+  if (!digitalRead(BTN_UP) && dy != 1)    { dx = 0; dy = -1; }
+  if (!digitalRead(BTN_DWN) && dy != -1)  { dx = 0; dy = 1; }
+  if (!digitalRead(BTN_LFT) && dx != 1)   { dx = -1; dy = 0; }
+  if (!digitalRead(BTN_RHT) && dx != -1)  { dx = 1; dy = 0; }
+  if (!digitalRead(BTN_RST)) { inGame = false; delay(200); }
+}
+
+void updateSnake() {
+  Point head = snake[0];
+  Point newHead = {
+    (head.x + dx + GRID_WIDTH) % GRID_WIDTH,
+    (head.y + dy + GRID_HEIGHT) % GRID_HEIGHT
+  };
+
+  // self collision -> game over
+  for (int i = 0; i < snakeLength; i++) {
+    if (snake[i].x == newHead.x && snake[i].y == newHead.y) {
+      inGame = false;
+      return;
+    }
+  }
+
+  // move body
+  for (int i = snakeLength; i > 0; i--) {
+    snake[i] = snake[i - 1];
+  }
+  snake[0] = newHead;
+
+  // food
+  if (newHead.x == food.x && newHead.y == food.y) {
+    snakeLength++;
+    snakeScore += 10;               // points
+    placeFood();
+  } else if (snakeLength > MAX_SNAKE_LENGTH) {
+    snakeLength = MAX_SNAKE_LENGTH;
+  }
+}
+
+void placeFood() {
+  bool valid;
+  do {
+    valid = true;
+    food.x = random(GRID_WIDTH);
+    food.y = random(GRID_HEIGHT);
+    for (int i = 0; i < snakeLength; i++) {
+      if (snake[i].x == food.x && snake[i].y == food.y) {
+        valid = false;
+        break;
+      }
+    }
+  } while (!valid);
+}
+
+void drawSnakeGame() {
+  display.clearDisplay();
+  display.drawRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2, SSD1306_WHITE);
+
+  for (int i = 0; i < snakeLength; i++) {
+    int px = FIELD_X + snake[i].x * SEG_SIZE;
+    int py = FIELD_Y + snake[i].y * SEG_SIZE;
+    display.fillRect(px, py, SEG_SIZE, SEG_SIZE, SSD1306_WHITE);
+  }
+
+  int fx = FIELD_X + food.x * SEG_SIZE;
+  int fy = FIELD_Y + food.y * SEG_SIZE;
+  display.fillRect(fx, fy, SEG_SIZE, SEG_SIZE, SSD1306_WHITE);
+
+  // Score overlay
+  drawScore("Score", snakeScore);
+
+  display.display();
+}
+
+
+
+
+// Part 4
+
+
+
+
+// ====================== PART 4 ======================
+// Start Pong
+void startPongGame() {
+  inGame = true;
+  activeGame = 2;
+  pongScore = 0;                  // reset
+  pongBallX = FIELD_X + FIELD_W / 2;
+  pongBallY = FIELD_Y + FIELD_H / 2;
+
+  // Start direction slightly diagonal
+  pongBallDX = -1;
+  pongBallDY = random(-1, 2); // -1, 0 or 1
+
+  // ensure it doesn't start perfectly horizontal
+  if (pongBallDY == 0) pongBallDY = 1;
+
+  pongPaddleY = FIELD_Y + FIELD_H / 2 - 10;
+  pongSpeed = 0.5;  // gentle start
+  lastMove = millis();
+}
+
+void handlePongInput() {
+  if (!digitalRead(BTN_UP))   { pongPaddleY -= 2; }
+  if (!digitalRead(BTN_DWN))  { pongPaddleY += 2; }
+  if (!digitalRead(BTN_RST))  { inGame = false; delay(200); }
+
+  // Clamp paddle within playfield
+  if (pongPaddleY < FIELD_Y) pongPaddleY = FIELD_Y;
+  if (pongPaddleY + 20 > FIELD_Y + FIELD_H) pongPaddleY = FIELD_Y + FIELD_H - 20;
+}
+
+void updatePong() {
+  pongBallX += pongBallDX * pongSpeed;
+  pongBallY += pongBallDY * pongSpeed;
+
+  // Bounce top/bottom
+  if (pongBallY <= FIELD_Y) {
+    pongBallY = FIELD_Y;
+    pongBallDY = -pongBallDY;
+  }
+  if (pongBallY >= FIELD_Y + FIELD_H - 2) {
+    pongBallY = FIELD_Y + FIELD_H - 2;
+    pongBallDY = -pongBallDY;
+  }
+
+  // Paddle hit?
+  if (pongBallX <= FIELD_X + 3 &&
+      pongBallY >= pongPaddleY &&
+      pongBallY <= pongPaddleY + 20) {
+    pongBallX = FIELD_X + 3;
+    pongBallDX = -pongBallDX;
+
+    // Small variation for the new direction
+    int bounceY = random(-1, 2);
+    if (bounceY != 0) pongBallDY = bounceY;
+
+    // Gentle acceleration
+    pongSpeed += 0.2;
+    if (pongSpeed > 3.5) pongSpeed = 3.5;
+
+    // points per successful return
+    pongScore += 1;
+  }
+
+  // Right wall -> just bounce
+  if (pongBallX >= FIELD_X + FIELD_W - 2) {
+    pongBallX = FIELD_X + FIELD_W - 2;
+    pongBallDX = -pongBallDX;
+  }
+
+  // Left out -> restart game
+  if (pongBallX < FIELD_X) {
+    startPongGame();
+  }
+}
+
+void drawPongGame() {
+  display.clearDisplay();
+  display.drawRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2, SSD1306_WHITE);
+
+  // Ball
+  display.fillRect(pongBallX, pongBallY, 2, 2, SSD1306_WHITE);
+
+  // Paddle
+  display.fillRect(FIELD_X + 2, pongPaddleY, 2, 20, SSD1306_WHITE);
+
+  drawScore("Score", pongScore);
+
+  display.display();
+}
+
+
+
+// ====================== PART 4.1: BREAKOUT ======================
+// Fits portrait playfield FIELD_W=60, FIELD_H=120
+
+// Brick layout
+const int BRICK_COLS = 6;                          // 6 columns → 10px per brick
+const int BRICK_ROWS = 7;                          // 7 rows
+const int BRICK_W   = FIELD_W / BRICK_COLS;        // 60/6 = 10 px
+const int BRICK_H   = 6;                           // 6 px height
+const int BRICK_TOP = FIELD_Y + 16;                // top margin below border
+
+bool bricks[BRICK_ROWS][BRICK_COLS];               // true = present
+int  bricksLeft = 0;
+
+// Paddle
+const int B_PADDLE_W = 18;
+const int B_PADDLE_H = 3;
+int   bPaddleX = FIELD_X + (FIELD_W - B_PADDLE_W)/2;
+int   bPaddleY = FIELD_Y + FIELD_H - 8;            // just above the bottom
+int   bPaddleSpeed = 2;
+
+// Ball
+int   bBallSize   = 2;
+float bBallX, bBallY;          // top-left corner
+float bBallDX = 0, bBallDY = 0;
+float bBallSpeed = 1.2;        // initial speed
+bool  breakoutRunning = false;
+
+void resetBreakoutBall() {
+  bBallX = FIELD_X + FIELD_W/2 - bBallSize/2;
+  bBallY = bPaddleY - bBallSize - 1;
+  // start diagonally upward
+  bBallDX = (random(0, 2) ? 1 : -1) * bBallSpeed;
+  bBallDY = -bBallSpeed;
+}
+
+void startBreakoutGame() {
+  inGame = true;
+  activeGame = 3;
+  breakoutScore = 0;              // reset for new run
+
+  // fill bricks
+  for (int r = 0; r < BRICK_ROWS; r++) {
+    for (int c = 0; c < BRICK_COLS; c++) {
+      bricks[r][c] = true;
+    }
+  }
+  bricksLeft = BRICK_ROWS * BRICK_COLS;
+
+  // center paddle
+  bPaddleX = FIELD_X + (FIELD_W - B_PADDLE_W)/2;
+  bPaddleY = FIELD_Y + FIELD_H - 8;
+
+  // reset ball
+  bBallSpeed = 1.2;
+  resetBreakoutBall();
+  breakoutRunning = true;
+}
+
+void handleBreakoutInput() {
+  if (!digitalRead(BTN_LFT)) bPaddleX -= bPaddleSpeed;
+  if (!digitalRead(BTN_RHT)) bPaddleX += bPaddleSpeed;
+  if (!digitalRead(BTN_RST)) { inGame = false; delay(200); }
+
+  // clamp paddle inside field
+  if (bPaddleX < FIELD_X) bPaddleX = FIELD_X;
+  if (bPaddleX + B_PADDLE_W > FIELD_X + FIELD_W)
+    bPaddleX = FIELD_X + FIELD_W - B_PADDLE_W;
+}
+
+// simple AABB overlap
+bool overlap(int ax,int ay,int aw,int ah,int bx,int by,int bw,int bh){
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+void updateBreakout() {
+  if (!breakoutRunning) return;
+
+  // previous position for collision resolution
+  float prevX = bBallX, prevY = bBallY;
+
+  // movement
+  bBallX += bBallDX;
+  bBallY += bBallDY;
+
+  // walls (inside the playfield)
+  if (bBallX <= FIELD_X) { bBallX = FIELD_X; bBallDX = -bBallDX; }
+  if (bBallX + bBallSize >= FIELD_X + FIELD_W) {
+    bBallX = FIELD_X + FIELD_W - bBallSize; bBallDX = -bBallDX;
+  }
+  if (bBallY <= FIELD_Y) { bBallY = FIELD_Y; bBallDY = -bBallDY; }
+
+  // paddle
+  if (overlap((int)bBallX,(int)bBallY,bBallSize,bBallSize,
+              bPaddleX,bPaddleY,B_PADDLE_W,B_PADDLE_H)) {
+    // place ball just above paddle and bounce upward
+    bBallY = bPaddleY - bBallSize - 0.01;
+    // angle based on impact point (center offset)
+    float paddleCenter = bPaddleX + B_PADDLE_W/2.0;
+    float ballCenter   = bBallX + bBallSize/2.0;
+    float offset       = (ballCenter - paddleCenter) / (B_PADDLE_W/2.0); // -1..1
+    bBallDX = offset * (bBallSpeed * 1.2);  // steer a bit
+    bBallDY = -fabs(bBallDY);
+
+    // gentle acceleration
+    bBallSpeed += 0.05;
+    if (bBallSpeed > 2.8) bBallSpeed = 2.8;
+
+    // normalize speed (control diagonal magnitude)
+    float mag = sqrt(bBallDX*bBallDX + bBallDY*bBallDY);
+    bBallDX = (bBallDX / mag) * bBallSpeed;
+    bBallDY = (bBallDY / mag) * bBallSpeed;
+  }
+
+  // bricks (simple: check all; reflect axis based on previous position)
+  for (int r = 0; r < BRICK_ROWS; r++) {
+    for (int c = 0; c < BRICK_COLS; c++) {
+      if (!bricks[r][c]) continue;
+
+      int bx = FIELD_X + c * BRICK_W;
+      int by = BRICK_TOP + r * BRICK_H;
+
+      if (overlap((int)bBallX,(int)bBallY,bBallSize,bBallSize, bx,by,BRICK_W,BRICK_H)) {
+        bricks[r][c] = false;
+        bricksLeft--;
+        breakoutScore += 10;              // points per brick
+
+        // determine collision side using previous position
+        bool hitFromSide =
+          (prevX + bBallSize <= bx) || (prevX >= bx + BRICK_W);
+        bool hitFromTopBottom =
+          (prevY + bBallSize <= by) || (prevY >= by + BRICK_H);
+
+        if (hitFromSide && !hitFromTopBottom) {
+          bBallDX = -bBallDX;           // horizontal bounce
+          // correct position next to the brick
+          if (prevX + bBallSize <= bx)   bBallX = bx - bBallSize - 0.01;
+          else                           bBallX = bx + BRICK_W + 0.01;
+        } else {
+          bBallDY = -bBallDY;           // vertical bounce
+          if (prevY + bBallSize <= by)   bBallY = by - bBallSize - 0.01;
+          else                           bBallY = by + BRICK_H + 0.01;
+        }
+
+        // small random variation to avoid “tunneling” patterns
+        if (random(0,3)==0) bBallDX *= 1.05;
+        if (random(0,3)==0) bBallDY *= 1.05;
+
+        // win?
+        if (bricksLeft <= 0) {
+          breakoutScore += 25;            // level-clear bonus
+          startBreakoutGame();
+          return;
+        }
+      }
+    }
+  }
+
+  // bottom = life over → simple restart (replace with inGame=false to exit to menu)
+  if (bBallY + bBallSize >= FIELD_Y + FIELD_H) {
+    startBreakoutGame();
+  }
+}
+
+void drawBreakoutGame() {
+  display.clearDisplay();
+
+  // field
+  display.drawRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2, SSD1306_WHITE);
+
+  // bricks
+  for (int r = 0; r < BRICK_ROWS; r++) {
+    for (int c = 0; c < BRICK_COLS; c++) {
+      if (!bricks[r][c]) continue;
+      int x = FIELD_X + c * BRICK_W;
+      int y = BRICK_TOP + r * BRICK_H;
+      display.fillRect(x+1, y+1, BRICK_W-2, BRICK_H-2, SSD1306_WHITE);
+    }
+  }
+
+  // paddle
+  display.fillRect(bPaddleX, bPaddleY, B_PADDLE_W, B_PADDLE_H, SSD1306_WHITE);
+
+  // ball
+  display.fillRect((int)bBallX, (int)bBallY, bBallSize, bBallSize, SSD1306_WHITE);
+
+  drawScore("Score", breakoutScore);
+
+  display.display();
+}
+
+// ====================== PART 4.2: FLAPPY BIRD ======================
+// Fits portrait playfield FIELD_W=60, FIELD_H=120
+
+// Bird
+const int  FBIRD_SIZE  = 6;
+float fbX, fbY, fbVel;
+const float FB_GRAV    = 0.08f;         // downward acceleration (gravity)
+const float FB_FLAP    = -1.8f;         // upward impulse when flapping
+
+// Pipes
+const int  PIPE_W       = 8;
+const int  NUM_PIPES    = 1;            // number of pipes on screen
+const int  GAP_H        = 32;           // gap height
+const int  PIPE_SPACING = 34;           // horizontal distance between pipes
+int   pipeX[NUM_PIPES];
+int   gapY[NUM_PIPES];
+bool  pipeScored[NUM_PIPES];
+
+int   flappyScore = 0;
+
+int flappyRandGapY() {
+  // vertical margin 8px; ensure the gap fits inside the field
+  int minY = FIELD_Y + 8;
+  int maxY = FIELD_Y + FIELD_H - GAP_H - 8;
+  if (maxY <= minY) return FIELD_Y + (FIELD_H - GAP_H)/2; // fallback
+  return random(minY, maxY + 1);
+}
+
+void startFlappyGame() {
+  inGame = true;
+  activeGame = 4;
+
+  flappyScore = 0;
+
+  // bird start
+  fbX = FIELD_X + 12;
+  fbY = FIELD_Y + FIELD_H / 2;
+  fbVel = 0;
+
+  // place pipes off-screen to the right
+  for (int i = 0; i < NUM_PIPES; i++) {
+    pipeX[i] = FIELD_X + FIELD_W + 10 + i * PIPE_SPACING;
+    gapY[i]  = flappyRandGapY();
+    pipeScored[i] = false;
+  }
+}
+
+void handleFlappyInput() {
+  // flap with UP or MID
+  if (!digitalRead(BTN_UP) || !digitalRead(BTN_MID)) {
+    fbVel = FB_FLAP;
+  }
+  if (!digitalRead(BTN_RST)) { inGame = false; delay(200); }
+}
+
+void updateFlappy() {
+  // bird physics
+  fbVel += FB_GRAV;
+  fbY   += fbVel;
+
+  // floor/ceiling checks
+  if (fbY <= FIELD_Y) {
+    fbY = FIELD_Y;
+    inGame = false;         // game over → back to menu
+    return;
+  }
+  if (fbY + FBIRD_SIZE >= FIELD_Y + FIELD_H) {
+    fbY = FIELD_Y + FIELD_H - FBIRD_SIZE;
+    inGame = false;
+    return;
+  }
+
+  // move pipes & scoring
+  for (int i = 0; i < NUM_PIPES; i++) {
+    pipeX[i] -= 0.7f; // speed
+
+    // if fully off-screen left -> respawn to the right
+    if (pipeX[i] + PIPE_W < FIELD_X) {
+      // anchor to the rightmost pipe
+      int maxX = FIELD_X + FIELD_W;
+      for (int k = 0; k < NUM_PIPES; k++) if (pipeX[k] > maxX) maxX = pipeX[k];
+      pipeX[i] = maxX + PIPE_SPACING;
+      gapY[i]  = flappyRandGapY();
+      pipeScored[i] = false;
+    }
+
+    // score when pipe passes the bird
+    int birdCenterX = (int)(fbX + FBIRD_SIZE/2);
+    if (!pipeScored[i] && pipeX[i] + PIPE_W < birdCenterX) {
+      flappyScore += 1;
+      pipeScored[i] = true;
+    }
+
+    // collision (AABB), unless inside the gap
+    bool overlapX = ( (int)fbX < pipeX[i] + PIPE_W ) && ( (int)fbX + FBIRD_SIZE > pipeX[i] );
+    if (overlapX) {
+      bool inGap = ( (int)fbY >= gapY[i] ) && ( (int)fbY + FBIRD_SIZE <= gapY[i] + GAP_H );
+      if (!inGap) {
+        inGame = false;     // game over
+        return;
+      }
+    }
+  }
+}
+
+void drawFlappyGame() {
+  display.clearDisplay();
+
+  // field
+  display.drawRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2, SSD1306_WHITE);
+
+  // pipes
+  for (int i = 0; i < NUM_PIPES; i++) {
+    int x = pipeX[i];
+    int gy = gapY[i];
+
+    // top segment
+    display.fillRect(x, FIELD_Y, PIPE_W, gy - FIELD_Y, SSD1306_WHITE);
+    // bottom segment
+    int bottomY = gy + GAP_H;
+    display.fillRect(x, bottomY, PIPE_W, FIELD_Y + FIELD_H - bottomY, SSD1306_WHITE);
+  }
+
+  // bird
+  display.fillRect((int)fbX, (int)fbY, FBIRD_SIZE, FBIRD_SIZE, SSD1306_WHITE);
+
+  // score (short label, top-left inside field)
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(FIELD_X + 2, FIELD_Y + 2);
+  display.print("F:");
+  display.print(flappyScore);
+
+  display.display();
+}
+
+// ====================== PART 4.3: VERTICAL INVASION ======================
+// Fits portrait playfield FIELD_W=60, FIELD_H=120
+
+// Ship
+const int SHIP_W = 10;
+const int SHIP_H = 8;
+int shipX, shipY;
+int shipSpeed = 2;
+
+// Bullet (single)
+const int BUL_W = 2;
+const int BUL_H = 4;
+int bulX, bulY;
+bool firing = false;
+int bulletSpeed = 3;
+
+// Enemy (falls down, respawns at top)
+const int ENE_W = 12;
+const int ENE_H = 8;
+int enemyX, enemyY;
+int enemySpeed = 1;        // starts slow, increases with score
+int enemyPassed = 0;       // 0..3 (3 = game over)
+
+int InvasionScore = 0;
+
+// Reuse overlap() from Breakout.
+
+// keep enemy fully inside the playfield horizontally
+int randEnemyX() {
+  int minX = FIELD_X;
+  int maxX = FIELD_X + FIELD_W - ENE_W;
+  return random(minX, maxX + 1);
+}
+
+void startInvasionGame() {
+  inGame = true;
+  activeGame = 5;
+
+  InvasionScore = 0;
+  enemyPassed  = 0;
+  enemySpeed   = 1;
+
+  // Ship start at bottom, centered
+  shipX = FIELD_X + (FIELD_W - SHIP_W)/2;
+  shipY = FIELD_Y + FIELD_H - SHIP_H - 2;
+
+  // No bullet active
+  firing = false;
+  bulX = bulY = 0;
+
+  // First enemy at random X above the field
+  enemyX = randEnemyX();
+  enemyY = FIELD_Y - ENE_H;
+}
+
+void handleInvasionInput() {
+  // Movement
+  if (!digitalRead(BTN_LFT)) shipX -= shipSpeed;
+  if (!digitalRead(BTN_RHT)) shipX += shipSpeed;
+  if (!digitalRead(BTN_UP))  shipY -= shipSpeed;
+  if (!digitalRead(BTN_DWN)) shipY += shipSpeed;
+
+  // Clamp ship within field
+  if (shipX < FIELD_X) shipX = FIELD_X;
+  if (shipX + SHIP_W > FIELD_X + FIELD_W) shipX = FIELD_X + FIELD_W - SHIP_W;
+  if (shipY < FIELD_Y) shipY = FIELD_Y;
+  if (shipY + SHIP_H > FIELD_Y + FIELD_H) shipY = FIELD_Y + FIELD_H - SHIP_H;
+
+  // FIRE: BTN_SET or BTN_MID
+  bool firePressed = (!digitalRead(BTN_SET)) || (!digitalRead(BTN_MID));
+  if (firePressed && !firing) {
+    firing = true;
+    bulX = shipX + SHIP_W/2 - BUL_W/2;
+    bulY = shipY - BUL_H;      // just above the nose
+  }
+
+  // Back to menu
+  if (!digitalRead(BTN_RST)) { inGame = false; delay(200); }
+}
+
+void updateInvasion() {
+  // Move enemy downward
+  enemyY += enemySpeed;
+
+  // Enemy reached bottom? -> pass, respawn, possible game over
+  if (enemyY > FIELD_Y + FIELD_H) {
+    enemyPassed++;
+    enemyX = randEnemyX();
+    enemyY = FIELD_Y - ENE_H;
+
+    if (enemyPassed >= 3) {
+      // game over → back to menu
+      inGame = false;
+      return;
+    }
+  }
+
+  // Bullet movement
+  if (firing) {
+    bulY -= bulletSpeed;
+    if (bulY + BUL_H < FIELD_Y) {
+      firing = false;
+    }
+  }
+
+  // Collision: bullet hits enemy?
+  if (firing && overlap(bulX, bulY, BUL_W, BUL_H, enemyX, enemyY, ENE_W, ENE_H)) {
+    firing = false;
+    InvasionScore += 1;
+
+    // Respawn enemy at top
+    enemyX = randEnemyX();
+    enemyY = FIELD_Y - ENE_H;
+
+    // Simple difficulty: speed up every 5 points (max 3)
+    if ((InvasionScore % 5) == 0 && enemySpeed < 3) enemySpeed++;
+  }
+
+  // Collision: enemy hits ship? → immediate game over
+  if (overlap(shipX, shipY, SHIP_W, SHIP_H, enemyX, enemyY, ENE_W, ENE_H)) {
+    inGame = false;
+    return;
+  }
+}
+
+void drawInvasionGame() {
+  display.clearDisplay();
+
+  // Field
+  display.drawRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2, SSD1306_WHITE);
+
+  // Enemy (simple block)
+  display.fillRect(enemyX, enemyY, ENE_W, ENE_H, SSD1306_WHITE);
+
+  // Ship (simple T-shape for visibility)
+  // body
+  display.fillRect(shipX + 3, shipY, 4, SHIP_H, SSD1306_WHITE);
+  // wings
+  display.fillRect(shipX, shipY + SHIP_H - 3, SHIP_W, 3, SSD1306_WHITE);
+
+  // Bullet
+  if (firing) display.fillRect(bulX, bulY, BUL_W, BUL_H, SSD1306_WHITE);
+
+  // HUD: short labels top-left inside the field
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(FIELD_X + 2, FIELD_Y + 2);
+  display.print("Sh:");
+  display.print(InvasionScore);
+
+  // Lives (remaining misses) short top-right inside the field
+  // 3 - enemyPassed
+  display.setCursor(FIELD_X + FIELD_W - 18, FIELD_Y + 2);
+  display.print("L:");
+  display.print(3 - enemyPassed);
+
+  display.display();
+}
+
+
+// Part 5
+
+
+// ===================== PART 5: TETRIS with all 7 shapes & line clearing =====================
+
+#define TETRIS_COLS 10
+#define TETRIS_ROWS 20
+#define TETRIS_BLOCK 6
+byte tetrisField[TETRIS_ROWS][TETRIS_COLS];
+
+int tetrisX = 4, tetrisY = 0;
+byte tetrisShape[4][4];
+unsigned long lastTetrisMove = 0;
+int tetrisInterval = 500;
+bool tetrisGameOver = false;
+
+// 7 classic Tetris blocks (I, O, T, L, J, S, Z)
+const byte SHAPES[7][4][4] = {
+  {{0,0,0,0},{1,1,1,1},{0,0,0,0},{0,0,0,0}}, // I
+  {{0,1,1,0},{0,1,1,0},{0,0,0,0},{0,0,0,0}}, // O
+  {{0,1,0,0},{1,1,1,0},{0,0,0,0},{0,0,0,0}}, // T
+  {{0,0,1,0},{1,1,1,0},{0,0,0,0},{0,0,0,0}}, // L
+  {{1,0,0,0},{1,1,1,0},{0,0,0,0},{0,0,0,0}}, // J
+  {{0,1,1,0},{1,1,0,0},{0,0,0,0},{0,0,0,0}}, // S
+  {{1,1,0,0},{0,1,1,0},{0,0,0,0},{0,0,0,0}}  // Z
+};
+
+void copyRandomShape() {
+  int index = random(0, 7);
+  memcpy(tetrisShape, SHAPES[index], sizeof(tetrisShape));
+}
+
+void startTetrisGame() {
+  inGame = true;
+  activeGame = 1;
+  tetrisScore = 0;                // score
+  memset(tetrisField, 0, sizeof(tetrisField));
+  copyRandomShape();
+  tetrisX = 3; tetrisY = 0;
+  tetrisGameOver = false;
+  lastTetrisMove = millis();
+}
+
+void loopTetris() {
+  handleTetrisInput();
+  if (millis() - lastTetrisMove > tetrisInterval) {
+    moveTetrisDown();
+    lastTetrisMove = millis();
+  }
+  drawTetrisGame();
+}
+
+void handleTetrisInput() {
+  if (!digitalRead(BTN_LFT)) { if (canMove(-1, 0)) tetrisX--; delay(150); }
+  if (!digitalRead(BTN_RHT)) { if (canMove(1, 0)) tetrisX++; delay(150); }
+  if (!digitalRead(BTN_DWN)) { moveTetrisDown(); delay(150); }
+  if (!digitalRead(BTN_MID)) { rotateTetrisShape(); delay(150); }
+  if (!digitalRead(BTN_RST)) { inGame = false; delay(200); }
+}
+
+bool canMove(int dx, int dy) {
+  for (int y = 0; y < 4; y++) {
+    for (int x = 0; x < 4; x++) {
+      if (tetrisShape[y][x]) {
+        int nx = tetrisX + x + dx;
+        int ny = tetrisY + y + dy;
+        if (nx < 0 || nx >= TETRIS_COLS || ny >= TETRIS_ROWS || (ny >= 0 && tetrisField[ny][nx])) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+void rotateTetrisShape() {
+  byte temp[4][4];
+  for (int y = 0; y < 4; y++) {
+    for (int x = 0; x < 4; x++) {
+      temp[x][3 - y] = tetrisShape[y][x];
+    }
+  }
+
+  // Check if rotation is possible; otherwise revert
+  byte backup[4][4];
+  memcpy(backup, tetrisShape, sizeof(tetrisShape));
+  memcpy(tetrisShape, temp, sizeof(tetrisShape));
+  if (!canMove(0, 0)) {
+    memcpy(tetrisShape, backup, sizeof(tetrisShape));
+  }
+}
+
+void moveTetrisDown() {
+  if (canMove(0, 1)) {
+    tetrisY++;
+  } else {
+    // Lock block into the field
+    for (int y = 0; y < 4; y++) {
+      for (int x = 0; x < 4; x++) {
+        if (tetrisShape[y][x]) {
+          int fx = tetrisX + x;
+          int fy = tetrisY + y;
+          if (fy < 0) {
+            tetrisGameOver = true;
+            inGame = false;
+            return;
+          }
+          tetrisField[fy][fx] = 1;
+        }
+      }
+    }
+
+    clearFullLines();  // Remove full lines
+
+    copyRandomShape(); // New shape
+    tetrisX = 3;
+    tetrisY = 0;
+  }
+}
+
+// Score per cleared lines
+void clearFullLines() {
+  int linesCleared = 0;
+
+  for (int y = TETRIS_ROWS - 1; y >= 0; y--) {
+    bool full = true;
+    for (int x = 0; x < TETRIS_COLS; x++) {
+      if (!tetrisField[y][x]) { full = false; break; }
+    }
+
+    if (full) {
+      // shift everything down by 1
+      for (int row = y; row > 0; row--) {
+        for (int col = 0; col < TETRIS_COLS; col++) {
+          tetrisField[row][col] = tetrisField[row - 1][col];
+        }
+      }
+      for (int col = 0; col < TETRIS_COLS; col++) tetrisField[0][col] = 0;
+
+      linesCleared++;
+      y++; // re-check this row after shifting
+    }
+  }
+
+  // Scoring per combo
+  switch (linesCleared) {
+    case 1: tetrisScore += 10; break;
+    case 2: tetrisScore += 30; break;
+    case 3: tetrisScore += 50; break;
+    case 4: tetrisScore += 80; break;
+  }
+
+  // Optional: slightly speed up after clears
+  if (linesCleared > 0 && tetrisInterval > 150) {
+    tetrisInterval -= 10 * linesCleared; // a bit faster
+  }
+}
+
+void drawTetrisGame() {
+  display.clearDisplay();
+  display.drawRect(FIELD_X - 1, FIELD_Y - 1, FIELD_W + 2, FIELD_H + 2, SSD1306_WHITE);
+
+  // Draw placed field blocks
+  for (int y = 0; y < TETRIS_ROWS; y++) {
+    for (int x = 0; x < TETRIS_COLS; x++) {
+      if (tetrisField[y][x]) {
+        int px = FIELD_X + x * TETRIS_BLOCK;
+        int py = FIELD_Y + y * TETRIS_BLOCK;
+        display.fillRect(px, py, TETRIS_BLOCK, TETRIS_BLOCK, SSD1306_WHITE);
+      }
+    }
+  }
+
+  // Draw current falling shape
+  for (int y = 0; y < 4; y++) {
+    for (int x = 0; x < 4; x++) {
+      if (tetrisShape[y][x]) {
+        int px = FIELD_X + (tetrisX + x) * TETRIS_BLOCK;
+        int py = FIELD_Y + (tetrisY + y) * TETRIS_BLOCK;
+        if (py >= FIELD_Y) {
+          display.fillRect(px, py, TETRIS_BLOCK, TETRIS_BLOCK, SSD1306_WHITE);
+        }
+      }
+    }
+  }
+
+  drawScore("Score", tetrisScore);
+
+  display.display();
+}
