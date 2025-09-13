@@ -46,7 +46,6 @@ I wanted a simple, hackable arcade you can assemble quickly from common parts an
 
 **Default pins** (adjust in the sketch if needed):
 
-\`\`\`cpp
 // Buttons (INPUT_PULLUP)
 #define BTN_UP   32
 #define BTN_DWN  33
@@ -55,7 +54,6 @@ I wanted a simple, hackable arcade you can assemble quickly from common parts an
 #define BTN_MID  27    // Select / Action
 #define BTN_SET  14    // Secondary action (fire in Invasion)
 #define BTN_RST  12    // Back to menu / Reset current game
-\`\`\`
 
 ---
 
