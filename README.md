@@ -1,4 +1,4 @@
-# Mini Arcade (ESP32 + SSD1306) — Snake • Tetris • Pong • Breakout • Flappy • Invasion
+# Mini Arcade (ESP32 + SSD1306) — Snake • Tetris • Pong • Breakout • Flappy • Invasion • Frogger • Pacman
 
 A tiny, vertical (portrait) **mini-arcade** you can build with an ESP32 and a 128×64 OLED (SSD1306).  
 The project started from a great base by **Dododomme** (Snake, Tetris, Pong). This fork **adds**:
@@ -6,11 +6,23 @@ The project started from a great base by **Dododomme** (Snake, Tetris, Pong). Th
 - **Breakout**
 - **Flappy** (Flappy Bird–style)
 - **Invasion** (simple vertical shooter)
+- **Frogger** (old style)
+- **Pacman** (simple version)
 - **Scorekeeping** across all games
 
 Everything runs in a single Arduino sketch using **Adafruit_GFX** and **Adafruit_SSD1306**.
 
 For 3D files -> https://makerworld.com/en/models/1527345-mini-arcade
+
+---
+
+## Updates
+
+Wersion 20250913 
+- Made seperate files for each game
+- Add Frogger game
+- Add Pacman game 
+
 ---
 
 ## Why this project?
@@ -21,7 +33,7 @@ I wanted a simple, hackable arcade you can assemble quickly from common parts an
 
 ## Features
 
-- 🕹️ **6 classic mini-games**: Snake, Tetris, Pong, Breakout, Flappy, Invasion  
+- 🕹️ **8 classic mini-games**: Snake, Tetris, Pong, Breakout, Flappy, Invasion, Frogger and Packman  
 - 🧮 **Per-game scoring** with a lightweight on-screen HUD  
 - 📐 **Portrait playfield** (60×120 px inside the 128×64 OLED) for a cabinet-like feel  
 - ⏱️ **Tetris line clearing + speed-up**, **Breakout ball control & acceleration**, **Flappy pipes & gravity**, **Invasion bullets & enemy waves**  
