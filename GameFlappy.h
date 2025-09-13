@@ -1,0 +1,1 @@
+void startFlappyGame(); void flappyLoopTick();

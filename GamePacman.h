@@ -1,0 +1,1 @@
+void startPacmanGame(); void pacmanLoopTick();
